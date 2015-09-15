@@ -3,6 +3,7 @@
 use Closure;
 use Asm89\Stack\CorsService;
 use Illuminate\Contracts\Debug\ExceptionHandler;
+use Illuminate\Contracts\Events\Dispatcher;
 
 class HandleCors
 {
@@ -12,7 +13,7 @@ class HandleCors
      * @var ExceptionHandler
      */
     protected $exceptionHandler;
-    
+
     /**
      * The CORS service
      *
@@ -20,13 +21,22 @@ class HandleCors
      */
     protected $cors;
 
+    /**
+     * The Event Dispatcher
+     *
+     * @var Dispatcher
+     */
+    protected $dispatcher;
+
+
 	/**
 	 * @param CorsService $cors
 	 */
-	public function __construct(CorsService $cors, ExceptionHandler $exceptionHandler)
+	public function __construct(CorsService $cors, ExceptionHandler $exceptionHandler, Dispatcher $dispatcher)
 	{
 		$this->cors = $cors;
 		$this->exceptionHandler = $exceptionHandler;
+        $this->dispatcher = $dispatcher;
 	}
 
 	/**
@@ -37,26 +47,24 @@ class HandleCors
 	 * @param  \Closure  $next
 	 * @return mixed
 	 */
-	public function handle($request, Closure $next)
-	{
-		if ($this->isSameDomain($request) || ! $this->cors->isCorsRequest($request)) {
-			return $next($request);
-		}
+     public function handle($request, Closure $next)
+ 	{
+ 		if ($this->isSameDomain($request) || ! $this->cors->isCorsRequest($request)) {
+ 			return $next($request);
+ 		}
 
-		if ( ! $this->cors->isActualRequestAllowed($request)) {
-			abort(403);
-		}
+ 		if ( ! $this->cors->isActualRequestAllowed($request)) {
+ 			abort(403);
+ 		}
 
-		try {
-		    /** @var \Illuminate\Http\Response $response */
-		    $response = $next($request);
-		} catch (\Exception $e) {
-		    $this->exceptionHandler->report($e);
-		    $response = $this->exceptionHandler->render($request, $e);
-		}
+         $cors = $this->cors;
 
-		return $this->cors->addActualRequestHeaders($response, $request);
-	}
+         $this->dispatcher->listen('kernel.handled', function($request, $response) use ($cors) {
+             $cors->addActualRequestHeaders($response, $request);
+         });
+
+ 	    return $next($request);
+ 	}
 
 	/**
 	 * @param  \Illuminate\Http\Request  $request
